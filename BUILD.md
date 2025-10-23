@@ -1,6 +1,6 @@
 # BUILDING NATIVE PACKAGES FOR DISLOCKER
 
-This document provides instructions for building native system packages (e.g., `.deb` for Debian/Ubuntu, `.rpm` for Fedora/RHEL) from the `dislocker` source code.
+This document provides instructions for building native system packages (e.g., `.deb` for Debian/Ubuntu) from the `dislocker` source code.
 
 For general compilation and installation, please see `README.md` and `INSTALL.md`.
 
@@ -8,9 +8,9 @@ For general compilation and installation, please see `README.md` and `INSTALL.md
 
 Ubuntu 22.04 LTS ships with **mbedTLS 2.28**, but the latest `dislocker` source code requires **mbedTLS 3.x**. The package for the new version has to be built before building dislocker.
 
-This section provides the instructions based on a fesh install of [Ubuntu 22.04.5 LTS (Jammy Jellyfish)](https://releases.ubuntu.com/jammy/ubuntu-22.04.5-desktop-amd64.iso) 64-bit PC (AMD64) desktop image.
+This section provides the instructions based on a fresh install of [Ubuntu 22.04.5 LTS (Jammy Jellyfish)](https://releases.ubuntu.com/jammy/ubuntu-22.04.5-desktop-amd64.iso) 64-bit PC (AMD64) desktop image.
 
-The commands can be executed in the default Terminal (GNOME Terminal).
+The commands can be executed in the default terminal emulator (GNOME Terminal).
 
 ### Building mbedTLS 3.x package
 
@@ -24,29 +24,29 @@ sudo sed -i -E 's/^# deb-src ([^#]+jammy[^#]*)/deb-src \1/' /etc/apt/sources.lis
 sudo apt update
 ```
 
-#### Install all build tools and dependencies for mbedtls
+#### Install all build tools and dependencies
 
 ```bash
 sudo apt-get install -y \
-  build-essential devscripts debhelper equivs ubuntu-dev-tools \
-  fakeroot quilt lintian cmake pkg-config git ca-certificates \
-  curl wget python3 python3-sphinx dh-python faketime doxygen graphviz
+  build-essential ca-certificates cmake curl \
+  debhelper devscripts doxygen equivs \
+  faketime fakeroot git graphviz \
+  lintian pkg-config quilt ubuntu-dev-tools wget
 ```
 
-#### Set Maintainer Identity
+#### Configure the Build Environment
 
-Set this now to prevent warnings from uupdate and dch later.
+Set the maintainer identity to prevent warnings and define a fixed timestamp to ensure a reproducible build.
 
 ```bash
-export DEBFULLNAME="name"
-export DEBEMAIL="name@email.org"
+export DEBFULLNAME="Local Build"
+export DEBEMAIL="local@build.org"
+export DAK_TIMESTAMP="2025-10-15 00:00:00"
 ```
 
 #### Download and Prepare Source Files
 
-This fetches the Debian packaging files and the newer upstream source code.
-
-Create a clean workspace, get Debian's 3.6.4 source package (for its 'debian' directory), and get the upstream 3.6.5 source tarball and rename it for uupdate
+Fetch the Debian packaging files and the newer upstream source code. It creates a clean workspace, gets Debian's 3.6.4 source package (for its `debian` directory), and prepares the upstream 3.6.5 source tarball for use with `uupdate`.
 
 ```bash
 mkdir -p ~/build/mbedtls && cd ~/build/mbedtls
@@ -57,7 +57,7 @@ mv mbedtls-3.6.5.tar.bz2 ../mbedtls_3.6.5.orig.tar.bz2
 
 #### Merge New Source with Debian Packaging
 
-Use uupdate to create the final source tree for building.
+Use `uupdate` to merge the new upstream source with the older Debian packaging files, creating the final source tree for building.
 
 ```bash
 cd mbedtls-3.6.4
@@ -67,9 +67,7 @@ cd ../mbedtls-3.6.5
 
 #### Patch debian/control for Jammy Compatibility
 
-This is the crucial step to fix the build errors. This safely removes the problematic lines.
-
-Remove the dependency on dpkg-build-api, which is too new for Jammy, and relax the required version of dpkg-dev
+This safely removes dependencies that are too new for Ubuntu 22.04, a crucial step to prevent build failures.
 
 ```bash
 sed -i '/dpkg-build-api/d' debian/control
@@ -78,45 +76,62 @@ sed -i -E 's/dpkg-dev \(>= 1\.22\.5\)/dpkg-dev/' debian/control
 
 #### Finalize the Changelog
 
-Create and finalize the changelog entry for your backport. You can use `dch -r` or `nano -l debian/changelog` for editing.
+Create the changelog entry for the backport. Setting `TZ=UTC` ensures the timestamp is in a standardized timezone, which is a packaging best practice.
 
 ```bash
-dch -D jammy "Backport Mbed TLS 3.6.5 for Jammy."
+TZ=UTC dch -v 3.6.5-0ubuntu1 -D jammy "Backport Mbed TLS 3.6.5 for Jammy."
 ```
 
-#### Build the Packages
+#### Build the Packages (Two-Stage Process)
 
-This final step will compile everything and create the `.deb` files in the `~/build/mbedtls` directory.
+This two-stage process is necessary to correctly update the library symbols files and create a clean build without warnings.
+
+##### Stage 1: Generate and Update Symbols
+
+First, perform an initial build. This build is expected to produce warnings about mismatched symbols, but it will generate the correct symbol files that we need for the new version.
+Then, copy the newly generated symbols files into the debian source directory.
+At last, clean up the new symbols files to conform to Debian policy. This removes the Debian revision from symbol versions and deletes '#MISSING' tags.
 
 ```bash
-debuild -b -us -uc
+faketime -f "$DAK_TIMESTAMP" debuild -b -us -uc || true
+cp debian/libmbedcrypto16/DEBIAN/symbols debian/libmbedcrypto16.symbols
+cp debian/libmbedtls21/DEBIAN/symbols debian/libmbedtls21.symbols
+sed -i -e 's/3\.6\.5-0ubuntu1/3.6.5/g' \
+       -e '/#MISSING/d' \
+       debian/libmbedcrypto16.symbols debian/libmbedtls21.symbols
+```
+
+##### Stage 2: Final Clean Build
+
+Clean the build tree and run the build process again. With the corrected symbols files and a fixed timestamp, this final build will be clean and will not produce any symbols-related or clock skew warnings from `lintian`.
+
+```bash
+fakeroot debian/rules clean
+faketime -f "$DAK_TIMESTAMP" debuild -b -us -uc
 ```
 
 The list of 11 files that belong to the new final build are those named `*3.6.5-0ubuntu1*`:
 
-1. The Installable Packages (.deb files). These are the most important files. They are the actual software packages you can install and share.
+1.  **The Installable Packages (.deb files).** These are the most important files.
+    *   `libmbedcrypto16_3.6.5-0ubuntu1_amd64.deb`
+    *   `libmbedtls21_3.6.5-0ubuntu1_amd64.deb`
+    *   `libmbedx509-7_3.6.5-0ubuntu1_amd64.deb`
+    *   `libmbedtls-dev_3.6.5-0ubuntu1_amd64.deb`
+    *   `libmbedtls-doc_3.6.5-0ubuntu1_all.deb`
 
-- libmbedcrypto16_3.6.5-0ubuntu1_amd64.deb
-- libmbedtls21_3.6.5-0ubuntu1_amd64.deb
-- libmbedx509-7_3.6.5-0ubuntu1_amd64.deb
-- libmbedtls-dev_3.6.5-0ubuntu1_amd64.deb
-- libmbedtls-doc_3.6.5-0ubuntu1_all.deb
+2.  **The Debug Packages (.ddeb files).** These are for debugging purposes only.
+    *   `libmbedcrypto16-dbgsym_3.6.5-0ubuntu1_amd64.ddeb`
+    *   `libmbedtls21-dbgsym_3.6.5-0ubuntu1_amd64.ddeb`
+    *   `libmbedx509-7-dbgsym_3.6.5-0ubuntu1_amd64.ddeb`
 
-2. The Debug Packages (.ddeb files). These are also part of the build output, but they are only for debugging purposes.
-
-- libmbedcrypto16-dbgsym_3.6.5-0ubuntu1_amd64.ddeb
-- libmbedtls21-dbgsym_3.6.5-0ubuntu1_amd64.ddeb
-- libmbedx509-7-dbgsym_3.6.5-0ubuntu1_amd64.ddeb
-
-3. Build Information and Logs. These files document how the packages were built. They are useful for reproducibility but are not installed.
-
-- mbedtls_3.6.5-0ubuntu1_amd64.buildinfo
-- mbedtls_3.6.5-0ubuntu1_amd64.changes
-- mbedtls_3.6.5-0ubuntu1_amd64.build
+3.  **Build Information and Logs.** These files document how the packages were built. They are just text files, can't be installed.
+    *   `mbedtls_3.6.5-0ubuntu1_amd64.buildinfo`
+    *   `mbedtls_3.6.5-0ubuntu1_amd64.changes`
+    *   `mbedtls_3.6.5-0ubuntu1.build`
 
 #### Install the mbedTLS 3.x Packages
 
-The `-dev` packages are requires to build `dislocker` later, but not to just use it. The `-doc` is just documentation.
+The `-dev` package is required to build `dislocker` later, but not to just use it. The `-doc` package is optional documentation.
 
 ```bash
 cd ~/build/mbedtls
