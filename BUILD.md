@@ -142,3 +142,11 @@ sudo apt install \
   ./libmbedtls-doc_3.6.5-0ubuntu1_all.deb \
   ./libmbedx509-7_3.6.5-0ubuntu1_amd64.deb
 ```
+
+All these packages can coexist with 2.x versions, except the `-dev` package, which will replace the older `libmbedtls-dev` if it is already installed.
+
+A warning may appear when installing local `.deb` files that are not located in a system directory, but the installation is successful:
+
+```
+N: Download is performed unsandboxed as root as file '/home/<username>/build/mbedtls/libmbedcrypto16_3.6.5-0ubuntu1_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
+```
