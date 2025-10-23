@@ -150,3 +150,19 @@ A warning may appear when installing local `.deb` files that are not located in 
 ```
 N: Download is performed unsandboxed as root as file '/home/<username>/build/mbedtls/libmbedcrypto16_3.6.5-0ubuntu1_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
 ```
+
+#### Optional: Install Debug Symbol Packages
+
+The build process also creates debug symbol packages (`.ddeb` files). These are **not required** for normal use or for building other software.
+
+They are used by developers with debugging tools like `gdb` to analyze program crashes. The symbols provide a map from the compiled machine code back to the original source code, making it possible to see exactly which function in the code caused a problem.
+
+If you are a developer and need to debug dislocker's interaction with these libraries, install them manually using `dpkg`.
+
+```bash
+cd ~/build/mbedtls
+sudo dpkg -i \
+  ./libmbedcrypto16-dbgsym_3.6.5-0ubuntu1_amd64.ddeb \
+  ./libmbedtls21-dbgsym_3.6.5-0ubuntu1_amd64.ddeb \
+  ./libmbedx509-7-dbgsym_3.6.5-0ubuntu1_amd64.ddeb
+```
