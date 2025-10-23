@@ -1,6 +1,6 @@
 # BUILDING NATIVE PACKAGES FOR DISLOCKER
 
-This document provides instructions for building native system packages (e.g., `.deb` for Debian/Ubuntu) from the `dislocker` source code.
+This document provides instructions for building native system packages (e.g., `.deb` for Debian/Ubuntu, `.rpm` for Fedora/RHEL) from the `dislocker` source code.
 
 For general compilation and installation, please see `README.md` and `INSTALL.md`.
 
